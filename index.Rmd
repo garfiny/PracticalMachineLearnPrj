@@ -30,7 +30,7 @@ library(plyr)
 train <- read.csv('pml-training.csv', na.strings=c("NA","#DIV/0!",""))
 
 # reduce the size for debugging, remove this later
-# train <- train[sample(train$X, 2000),]
+train <- train[sample(train$X, 1000),]
 ```
 
 ### Data Cleaning
@@ -56,6 +56,8 @@ train <- train[,-c(nzvs)]
 ```{r}
 train <- train[, -which(grepl("user_name|timestamp|window", names(train)))]
 ```
+
+### Data Partitioning
 
 - Partitioning Training set for CrossValidation
 - split training set into cross validation traing and test set, 70% for training, 30% for testing
@@ -97,8 +99,7 @@ dt_fit
 
 - Decision Tree Test Result
 ```{r echo=FALSE}
-dt_cm$table
-dt_cm$overall
+dt_cm
 testing$predRight <- pred == testing$classe
 qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "Decision Tree Prediction Testing Result")
 ```
@@ -127,15 +128,14 @@ rf_fit$finalModel
 
 - Random Forest Test Result
 ```{r echo=FALSE}
-rf_cm$table
-rf_cm$overall
+rf_cm
 testing$predRight <- pred == testing$classe
 qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "Random Forest Prediction Testing Result")
 ```
 
 #### Expected out of sample error rate
 
-- Due to the random forest model always has good accuracy, so I expect the the error rate should be less than 7%.
+- Due to the random forest model always has good accuracy, and according to the model's OOB estimate of  error rate, it's expected to be around 0.7%.
 - Base on the training model and confusion matrix testing result
     + The actual out of sample error rate from cross-validation is: `r round(1 - rf_cm$overall['Accuracy'], 3)`
     + The Accuracy with 95% confidence interval (`r round(rf_cm$overall['AccuracyLower'], 3)`, `r round(rf_cm$overall['AccuracyUpper'], 3)`)
@@ -156,8 +156,7 @@ gbm_fit
 
 - GBM Model Test Result by confusion matrix
 ```{r echo=FALSE}
-gbm_cm$table
-gbm_cm$overall
+gbm_cm
 testing$predRight <- pred == testing$classe
 qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "GBM Prediction Testing Result")
 ```
