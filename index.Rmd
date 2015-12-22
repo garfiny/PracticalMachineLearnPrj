@@ -30,7 +30,7 @@ library(plyr)
 train <- read.csv('pml-training.csv', na.strings=c("NA","#DIV/0!",""))
 
 # reduce the size for debugging, remove this later
-train <- train[sample(train$X, 1000),]
+# train <- train[sample(train$X, 1000),]
 ```
 
 ### Data Cleaning
@@ -79,8 +79,7 @@ names(training)
   - In this section, I am going to use three machine learning methods and compare them to find out the best suitable one. They are decision tree, random forest and boosting with gbm model.
   - I also create training control object for cross validation. It's going to be  k-fold cross validation with k = 10.
 ```{r}
-trainCtl <- trainControl(method = "cv", number = 10,
-                         repeats = 2,verboseIter = TRUE)
+trainCtl <- trainControl(method = "cv", number = 10, repeats = 2)
 ```
 
 ### Decision Tree Model
@@ -92,6 +91,7 @@ pred <- predict(dt_fit, testing[, -53])
 dt_cm <- confusionMatrix(pred, testing$classe)
 fancyRpartPlot(dt_fit$finalModel)
 ```
+
 - Decision Tree Model Summary
 ```{r echo=FALSE}
 dt_fit
@@ -104,19 +104,18 @@ testing$predRight <- pred == testing$classe
 qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "Decision Tree Prediction Testing Result")
 ```
 
-#### Expected out of sample error rate
+#### Expected and Estimated out of sample error rate
 
-- Decision Tree model dones't have great accuracy, according to the model summary I expect its in sample error rate to be round 50%.
+- Decision Tree model dones't have great accuracy, according to the model summary I expect its in sample error rate to be around 50%.
 - Base on the training model and confusion matrix testing result
     + The actual out of sample error rate from cross-validation is: `r round(1 - dt_cm$overall['Accuracy'], 3)`
     + The Accuracy with 95% confidence interval (`r round(dt_cm$overall['AccuracyLower'], 3)`, `r round(dt_cm$overall['AccuracyUpper'], 3)`)
 
 ### Random Forest Model
 - I use random forest as my second model due to it has great accuracy.
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE}
 rf_fit <- train(classe ~ ., data = training, method = 'rf', 
-                prox = TRUE, preProcess = c("center", "scale"),
-                trControl = trainCtl)
+                prox = TRUE, trControl = trainCtl)
 pred <- predict(rf_fit, testing[, -53])
 rf_cm <- confusionMatrix(pred, testing$classe)
 ```
@@ -133,16 +132,16 @@ testing$predRight <- pred == testing$classe
 qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "Random Forest Prediction Testing Result")
 ```
 
-#### Expected out of sample error rate
+#### Expected and Estimated out of sample error rate
 
-- Due to the random forest model always has good accuracy, and according to the model's OOB estimate of  error rate, it's expected to be around 0.7%.
+- Due to the random forest model always has good accuracy, and according to the model's OOB estimate of error rate, it's expected to be around 0.7%.
 - Base on the training model and confusion matrix testing result
     + The actual out of sample error rate from cross-validation is: `r round(1 - rf_cm$overall['Accuracy'], 3)`
     + The Accuracy with 95% confidence interval (`r round(rf_cm$overall['AccuracyLower'], 3)`, `r round(rf_cm$overall['AccuracyUpper'], 3)`)
 
 ### Boosting with GBM Model
 - In the third model, I use gbm model. It's a kind of boosting with trees model.
-```{r warning=FALSE, message=FALSE}
+```{r warning=FALSE, message=FALSE, }
 gbm_fit <- train(classe ~ ., method = "gbm", data = training,
                  verbose = FALSE, trControl = trainCtl)
 pred <- predict(gbm_fit, testing[, -53])
@@ -161,9 +160,9 @@ testing$predRight <- pred == testing$classe
 qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "GBM Prediction Testing Result")
 ```
 
-#### Expected out of sample error rate
+#### Expected and Estimated out of sample error rate
 
-- According to the model summary the expected in sample error rate should be around 10%.
+- According to the model summary the expected in sample error rate should be around 5%.
 - Base on the training model and confusion matrix testing result
     + The actual out of sample error rate from cross-validation is: `r round(1 - gbm_cm$overall['Accuracy'], 3)`
     + The Accuracy with 95% confidence interval (`r round(gbm_cm$overall['AccuracyLower'], 3)`, `r round(gbm_cm$overall['AccuracyUpper'], 3)`)
@@ -187,8 +186,9 @@ comparison <- data.frame(Model = c("Decision Tree", "Random Forest", "GBM"),
                            paste(round(gbm_cm$overall['AccuracyLower'], 3), 
                                  " ~ ",
                                  round(gbm_cm$overall['AccuracyUpper'], 3))))
+comparison <- cbind(comparison, "OOB error rate" = c(1 - comparison[1, 2], 1 - comparison[2, 2], 1 - comparison[3, 2]))
 
-knitr::kable(comparison)
+knitr::kable(comparison, digits = 3)
 ```
 
 - Compare all 3 models, Random Forests is the best model in this case. It has the best accuracy and kappa value.
@@ -207,7 +207,7 @@ pml_write_files = function(x){
   }
 }
 
-#pml_write_files(result)
+pml_write_files(result)
 ```
 
 ## References
