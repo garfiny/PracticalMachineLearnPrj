@@ -1,0 +1,215 @@
+---
+title: "Practical ML - Assignment"
+author: "Shuo Zhao"
+date: "21 December 2015"
+output: html_document
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data Sources
+The training and test data for this project are available here:
+
+- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. See Reference [1].
+
+## Data Preparation
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(kernlab)
+library(randomForest)
+library(rattle)
+library(rpart.plot)
+library(gbm)
+library(plyr)
+train <- read.csv('pml-training.csv', na.strings=c("NA","#DIV/0!",""))
+
+# reduce the size for debugging, remove this later
+# train <- train[sample(train$X, 2000),]
+```
+
+### Data Cleaning
+- Remove the first column - 'X'
+```{r}
+train <- train[c(-1)]
+```
+
+* Remove columns which has too many NA values
+    + only keep the columns which have more than 60% of non-na values
+```{r}
+csums <- colSums(!is.na(train[,-ncol(train)]))
+train <- train[,csums > 0.6*nrow(train)]
+```
+
+- Identify and Remove near zero variance predictors
+```{r}
+nzvs <- nearZeroVar(train, saveMetrics = FALSE)
+train <- train[,-c(nzvs)]
+```
+
+- Remove timestamp, window and user_name variables
+```{r}
+train <- train[, -which(grepl("user_name|timestamp|window", names(train)))]
+```
+
+- Partitioning Training set for CrossValidation
+- split training set into cross validation traing and test set, 70% for training, 30% for testing
+```{r}
+train$classe = factor(train$classe)
+inTrain <- createDataPartition(y = train$classe, p = 0.70, list=FALSE)
+training <- train[inTrain, ]
+testing <- train[-inTrain, ]
+```
+
+- Training Set dimension: `r dim(training)`
+- Predictor candidates: 
+```{r echo=FALSE}
+names(training)
+```
+
+## Model Training and Cross Validation
+
+  - In this section, I am going to use three machine learning methods and compare them to find out the best suitable one. They are decision tree, random forest and boosting with gbm model.
+  - I also create training control object for cross validation. It's going to be  k-fold cross validation with k = 10.
+```{r}
+trainCtl <- trainControl(method = "cv", number = 10,
+                         repeats = 2,verboseIter = TRUE)
+```
+
+### Decision Tree Model
+- I use decision tree to model first because it is easy to interpret and  have better performance in nonlinear settings.
+```{r message=FALSE, warning=FALSE}
+dt_fit <- train(classe ~ ., data = training, 
+                method = 'rpart', trControl = trainCtl)
+pred <- predict(dt_fit, testing[, -53])
+dt_cm <- confusionMatrix(pred, testing$classe)
+fancyRpartPlot(dt_fit$finalModel)
+```
+- Decision Tree Model Summary
+```{r echo=FALSE}
+dt_fit
+```
+
+- Decision Tree Test Result
+```{r echo=FALSE}
+dt_cm$table
+dt_cm$overall
+testing$predRight <- pred == testing$classe
+qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "Decision Tree Prediction Testing Result")
+```
+
+#### Expected out of sample error rate
+
+- Decision Tree model dones't have great accuracy, according to the model summary I expect its in sample error rate to be round 50%.
+- Base on the training model and confusion matrix testing result
+    + The actual out of sample error rate from cross-validation is: `r round(1 - dt_cm$overall['Accuracy'], 3)`
+    + The Accuracy with 95% confidence interval (`r round(dt_cm$overall['AccuracyLower'], 3)`, `r round(dt_cm$overall['AccuracyUpper'], 3)`)
+
+### Random Forest Model
+- I use random forest as my second model due to it has great accuracy.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+rf_fit <- train(classe ~ ., data = training, method = 'rf', 
+                prox = TRUE, preProcess = c("center", "scale"),
+                trControl = trainCtl)
+pred <- predict(rf_fit, testing[, -53])
+rf_cm <- confusionMatrix(pred, testing$classe)
+```
+
+- Random Forest Model Summary
+```{r echo=FALSE}
+rf_fit$finalModel
+```
+
+- Random Forest Test Result
+```{r echo=FALSE}
+rf_cm$table
+rf_cm$overall
+testing$predRight <- pred == testing$classe
+qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "Random Forest Prediction Testing Result")
+```
+
+#### Expected out of sample error rate
+
+- Due to the random forest model always has good accuracy, so I expect the the error rate should be less than 7%.
+- Base on the training model and confusion matrix testing result
+    + The actual out of sample error rate from cross-validation is: `r round(1 - rf_cm$overall['Accuracy'], 3)`
+    + The Accuracy with 95% confidence interval (`r round(rf_cm$overall['AccuracyLower'], 3)`, `r round(rf_cm$overall['AccuracyUpper'], 3)`)
+
+### Boosting with GBM Model
+- In the third model, I use gbm model. It's a kind of boosting with trees model.
+```{r warning=FALSE, message=FALSE}
+gbm_fit <- train(classe ~ ., method = "gbm", data = training,
+                 verbose = FALSE, trControl = trainCtl)
+pred <- predict(gbm_fit, testing[, -53])
+gbm_cm <- confusionMatrix(pred, testing$classe)
+```
+
+- GBM Model Summary
+```{r echo=FALSE}
+gbm_fit
+```
+
+- GBM Model Test Result by confusion matrix
+```{r echo=FALSE}
+gbm_cm$table
+gbm_cm$overall
+testing$predRight <- pred == testing$classe
+qplot(total_accel_arm, total_accel_belt, colour = predRight, data = testing, main = "GBM Prediction Testing Result")
+```
+
+#### Expected out of sample error rate
+
+- According to the model summary the expected in sample error rate should be around 10%.
+- Base on the training model and confusion matrix testing result
+    + The actual out of sample error rate from cross-validation is: `r round(1 - gbm_cm$overall['Accuracy'], 3)`
+    + The Accuracy with 95% confidence interval (`r round(gbm_cm$overall['AccuracyLower'], 3)`, `r round(gbm_cm$overall['AccuracyUpper'], 3)`)
+
+### Model Comparison
+```{r echo=FALSE}
+comparison <- data.frame(Model = c("Decision Tree", "Random Forest", "GBM"),
+                         Accuracy = c(dt_cm$overall['Accuracy'], 
+                                      rf_cm$overall['Accuracy'], 
+                                      gbm_cm$overall['Accuracy']),
+                         Kappa = c(dt_cm$overall['Kappa'],
+                                   rf_cm$overall['Kappa'],
+                                   gbm_cm$overall['Kappa']),
+                         "CI(0.95)" = c(
+                           paste(round(dt_cm$overall['AccuracyLower'], 3), 
+                                 " ~ ",
+                                 round(dt_cm$overall['AccuracyUpper'], 3)),
+                           paste(round(rf_cm$overall['AccuracyLower'], 3), 
+                                 " ~ ",
+                                 round(rf_cm$overall['AccuracyUpper'], 3)),
+                           paste(round(gbm_cm$overall['AccuracyLower'], 3), 
+                                 " ~ ",
+                                 round(gbm_cm$overall['AccuracyUpper'], 3))))
+
+knitr::kable(comparison)
+```
+
+- Compare all 3 models, Random Forests is the best model in this case. It has the best accuracy and kappa value.
+
+## Test Cases Submission
+```{r}
+testing_set <- read.csv('pml-testing.csv', na.strings=c("NA","#DIV/0!",""))
+result <- predict(rf_fit, testing_set)
+result
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+#pml_write_files(result)
+```
+
+## References
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
